@@ -1,0 +1,165 @@
+name: Devin Deliverables Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "deliverables/**"
+  push:
+    branches-ignore:
+      - main
+    paths:
+      - "deliverables/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review-deliverables:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gather phase requirement files
+        id: phase-docs
+        run: |
+          # Collect all .md files from phase folders into a newline-separated list
+          PHASE_DOCS=$(find . -path './.git' -prune -o \
+            -path './phase-*/*.md' -print | sort | sed 's|^\./||')
+
+          echo "Phase requirement files found:"
+          echo "$PHASE_DOCS"
+
+          # Store as multiline output
+          {
+            echo 'phase_docs<<EOF'
+            echo "$PHASE_DOCS"
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
+
+      - name: Get changed deliverable files
+        id: changed-files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # For PRs, compare against the base branch
+            FILES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" | \
+              jq -r '[.[].filename | select(startswith("deliverables/"))] | @json')
+          else
+            # For pushes, compare against the previous commit
+            FILES=$(git diff --name-only HEAD~1 HEAD -- 'deliverables/**' | \
+              jq -R -s '[split("\n")[] | select(length > 0)] | @json')
+          fi
+
+          if [ -z "$FILES" ] || [ "$FILES" = "[]" ]; then
+            echo "No deliverable files changed — skipping review."
+            echo "has_files=false" >> $GITHUB_OUTPUT
+          else
+            echo "files=$FILES" >> $GITHUB_OUTPUT
+            echo "has_files=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Devin Review Session
+        if: steps.changed-files.outputs.has_files == 'true'
+        id: devin-review
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          CHANGED_FILES: ${{ steps.changed-files.outputs.files }}
+          PHASE_DOCS: ${{ steps.phase-docs.outputs.phase_docs }}
+          REVIEW_PROMPT: |
+            You are a QA Learning Reviewer. Your job is to evaluate student deliverables
+            in this SQA learning repository against the task requirements defined in the
+            phase markdown files.
+
+            Repository: ${{ github.repository }}
+            Event: ${{ github.event_name }}
+            ${{ github.event_name == 'pull_request' && format('PR: #{0}', github.event.pull_request.number) || format('Branch: {0}, Commit: {1}', github.ref_name, github.sha) }}
+
+            ## Your Tasks
+
+            1. Clone the repository locally.
+
+            2. Set up a pre-push Git hook that prevents any pushes from a user with
+               the username "Devin AI" OR an email containing "devin-ai-integration"
+               as a substring. Activate the hook.
+
+            3. Read the following phase requirement files to understand what each task
+               expects the student to deliver:
+
+               ${{ steps.phase-docs.outputs.phase_docs }}
+
+               Each file contains weekly tasks, objectives, and acceptance criteria
+               for that phase of the SQA learning program.
+
+            4. Examine the changed deliverable files listed below and compare them
+               against the relevant phase requirements:
+
+               Changed files: ${{ steps.changed-files.outputs.files }}
+
+               For each changed file under deliverables/, determine which phase and
+               week it belongs to (by folder name or file name), then find the
+               matching requirement .md file and check:
+               - Does the deliverable address all required tasks for that week?
+               - Is the quality of work appropriate (correct test structure, naming,
+                 coverage, documentation)?
+               - Are there any missing sections, incomplete implementations, or
+                 misunderstandings of the requirements?
+
+            5. If running the deliverable code (e.g. test scripts) is meaningful and
+               safe, do so to verify it works as expected.
+
+            6. If no issues are found, post a single comment:
+               "All deliverables look good and meet the phase requirements!"
+               Then stop.
+
+            7. Otherwise, post detailed feedback (maximum 3 comments total) that:
+               - References the specific requirement from the phase .md file that
+                 is not met
+               - Points to the exact line or section in the deliverable file
+               - Includes a code snippet or example showing what is expected
+               - Suggests a concrete improvement
+
+            ## Rules
+
+            - NEVER commit or push anything to the repository — read and comment only.
+            - Do not make more than three total comments.
+            - Consolidate repeated issues into a single comment.
+            - Do not ask for user confirmation or wait for user messages.
+            - Check the PR/commit discussion for duplicate comments before posting.
+            - Use inline feedback with specific line references where possible.
+            - Use markdown code blocks when showing code examples.
+
+        run: |
+          ESCAPED_PROMPT=$(echo "$REVIEW_PROMPT" | jq -Rs .)
+
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer $DEVIN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"prompt\": $ESCAPED_PROMPT}" \
+            "https://api.devin.ai/v1/sessions")
+
+          ERROR_MSG=$(echo "$RESPONSE" | jq -r '.detail // empty')
+          if [ -n "$ERROR_MSG" ]; then
+            echo "Error creating Devin session: $ERROR_MSG"
+            exit 1
+          fi
+
+          SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id')
+          SESSION_URL=$(echo "$RESPONSE" | jq -r '.url')
+
+          if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "null" ] || \
+             [ -z "$SESSION_URL" ] || [ "$SESSION_URL" = "null" ]; then
+            echo "Error: Devin session details are missing."
+            echo "Full response: $RESPONSE"
+            exit 1
+          fi
+
+          echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
+          echo "session-url=$SESSION_URL" >> $GITHUB_OUTPUT
+          echo "Devin review session started: $SESSION_URL"

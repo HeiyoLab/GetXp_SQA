@@ -18,10 +18,10 @@ Track your weekly progress, reflections, and deliverable links here.
 ## Phase 1 — Foundations Reset
 
 ### Week 01 — QA Mindset & Test Strategy
-- [ ] Completed
-- **Date completed:** —
-- **Deliverable link:** —
-- **Reflection:** —
+- [x] Completed
+- **Date completed:** 05/07/2026
+- **Deliverable link:** [week-01-test-strategy.md](deliverables/phase-1/Week-01/week-01-test-strategy.md)
+- **Reflection:** A lot of writing, but most of the concepts were already familiar to me. Some procedures were less familiar, particularly Section 5 (Entry Criteria), which introduced a more formal checklist-driven approach I had not practiced before.
 - **Score (self / evaluated):** — / —
 
 ---

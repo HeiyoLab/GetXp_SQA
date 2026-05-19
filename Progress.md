@@ -27,10 +27,10 @@ Track your weekly progress, reflections, and deliverable links here.
 ---
 
 ### Week 02 — Manual Testing & Bug Reporting
-- [ ] Completed
-- **Date completed:** —
-- **Deliverable link:** —
-- **Reflection:** —
+- [x] Completed
+- **Date completed:** 05/18/2026
+- **Deliverable link:** [week-02-bug-reports.md](deliverables/phase-1/Week-02/week-02-bug-reports.md)
+- **Reflection:** Learned the proper terms for BVA (Boundary Value Analysis) and EP (Equivalence Partitioning) — had been applying both techniques intuitively before without knowing the formal names.
 - **Score (self / evaluated):** — / —
 
 ---
